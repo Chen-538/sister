@@ -93,6 +93,12 @@ if audio_bytes and st.session_state.transcript is None:
 # ══════════════════════════════════════════════════════
 if st.session_state.transcript is not None:
     st.header("二、逐字稿（可編輯）")
+    if st.button("⬅️ 重新輸入音檔/逐字稿", key="back_to_input"):
+        st.session_state.transcript = None
+        st.session_state.structured_data = None
+        st.session_state.newsletter_content = None
+        st.session_state.log_content = None
+        st.rerun()
     edited_transcript = st.text_area(
         "逐字稿內容",
         value=st.session_state.transcript,
@@ -123,6 +129,11 @@ if st.session_state.transcript is not None:
 # ══════════════════════════════════════════════════════
 if st.session_state.structured_data is not None:
     st.header("三、結構化資料")
+    if st.button("⬅️ 回到逐字稿編輯", key="back_to_transcript"):
+        st.session_state.structured_data = None
+        st.session_state.newsletter_content = None
+        st.session_state.log_content = None
+        st.rerun()
     with st.expander("檢視 JSON 資料", expanded=True):
         st.json(st.session_state.structured_data)
 
