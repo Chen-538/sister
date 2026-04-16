@@ -10,22 +10,30 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 def _set_cell_text(cell, text):
     """清除儲存格原有內容，寫入新文字，保留第一段的格式。"""
+    from copy import deepcopy
+
     if isinstance(text, list):
         text = "\n".join(str(item) for item in text)
     text = str(text)
 
-    # 取得第一段的段落格式與字型格式
     first_para = cell.paragraphs[0]
-    para_fmt = first_para.paragraph_format
-    font_props = {}
+
+    # 從第一段第一個 run 複製完整的 rPr XML（包含 eastAsia 字型、szCs 等）
+    src_rPr = None
     if first_para.runs:
-        src_font = first_para.runs[0].font
-        if src_font.size:
-            font_props["size"] = src_font.size
-        if src_font.name:
-            font_props["name"] = src_font.name
-        if src_font.bold is not None:
-            font_props["bold"] = src_font.bold
+        orig_rPr = first_para.runs[0]._r.find(qn("w:rPr"))
+        if orig_rPr is not None:
+            src_rPr = deepcopy(orig_rPr)
+
+    # 複製段落屬性，但移除可能導致跑版的縮排設定
+    src_pPr = None
+    orig_pPr = first_para._p.find(qn("w:pPr"))
+    if orig_pPr is not None:
+        src_pPr = deepcopy(orig_pPr)
+        # 移除 hanging indent（原始內容的縮排不適合新文字）
+        ind = src_pPr.find(qn("w:ind"))
+        if ind is not None:
+            src_pPr.remove(ind)
 
     # 刪除儲存格內所有段落 XML（除了第一段）
     tc = cell._tc
@@ -36,48 +44,50 @@ def _set_cell_text(cell, text):
     for run in first_para.runs:
         first_para._p.remove(run._r)
 
+    # 修正第一段的 pPr（移除縮排）
+    old_pPr = first_para._p.find(qn("w:pPr"))
+    if old_pPr is not None:
+        old_ind = old_pPr.find(qn("w:ind"))
+        if old_ind is not None:
+            old_pPr.remove(old_ind)
+
     # 寫入新內容，每個 \n 換一段
     lines = text.split("\n")
     for i, line in enumerate(lines):
         if i == 0:
             para = first_para
         else:
-            # 新增段落：複製段落格式 XML
             new_p = tc.makeelement(qn("w:p"), {})
-            # 複製段落屬性
-            src_pPr = first_para._p.find(qn("w:pPr"))
             if src_pPr is not None:
-                from copy import deepcopy
                 new_p.append(deepcopy(src_pPr))
             tc.append(new_p)
             from docx.text.paragraph import Paragraph
             para = Paragraph(new_p, cell)
 
         run = para.add_run(line)
-        for prop, val in font_props.items():
-            setattr(run.font, prop, val)
+        # 套用完整的原始 rPr（包含 eastAsia 字型、szCs）
+        if src_rPr is not None:
+            run._r.insert(0, deepcopy(src_rPr))
 
 
 def _set_para_text(para, new_text: str):
     """替換整個段落的文字，保留第一個 run 的格式。"""
-    font_props = {}
+    from copy import deepcopy
+
+    src_rPr = None
     if para.runs:
-        src_font = para.runs[0].font
-        if src_font.size:
-            font_props["size"] = src_font.size
-        if src_font.name:
-            font_props["name"] = src_font.name
-        if src_font.bold is not None:
-            font_props["bold"] = src_font.bold
+        orig_rPr = para.runs[0]._r.find(qn("w:rPr"))
+        if orig_rPr is not None:
+            src_rPr = deepcopy(orig_rPr)
 
     # 刪除所有 run
     for run in para.runs:
         para._p.remove(run._r)
 
-    # 寫入新 run
+    # 寫入新 run，套用完整原始格式
     run = para.add_run(new_text)
-    for prop, val in font_props.items():
-        setattr(run.font, prop, val)
+    if src_rPr is not None:
+        run._r.insert(0, deepcopy(src_rPr))
 
 
 def generate_newsletter(structured_data: dict, newsletter_content: dict, output_path: str) -> str:
